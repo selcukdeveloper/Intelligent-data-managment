@@ -1,0 +1,30 @@
+# VCS
+.git/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Secrets
+.env
+.env.*
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Local tooling
+.claude/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

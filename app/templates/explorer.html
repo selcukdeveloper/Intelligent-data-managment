@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}{{ db_label }} Explorer{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">{{ db_label }} Explorer</h2>
+
+  <label><strong>Predefined query:</strong></label>
+  <select id="query-select">
+    <option value="">— Choose a query —</option>
+    {% for key, q in queries.items() %}
+      <option value="{{ key }}" data-query='{{ q.query | tojson }}'>{{ q.description }}</option>
+    {% endfor %}
+  </select>
+
+  <div style="margin-top:16px">
+    <label><strong>Query:</strong></label>
+    <textarea id="query-text" placeholder="Select a predefined query above, or write your own here..."></textarea>
+  </div>
+
+  <div style="margin-top:12px">
+    <button id="run-btn">▶ Run Query</button>
+    <span id="status" style="margin-left:12px"></span>
+  </div>
+</div>
+
+<div id="result-area"></div>
+
+<script>
+  const db = "{{ db_name }}";
+  const select = document.getElementById("query-select");
+  const textarea = document.getElementById("query-text");
+  const runBtn = document.getElementById("run-btn");
+  const status = document.getElementById("status");
+  const resultArea = document.getElementById("result-area");
+
+  select.addEventListener("change", () => {
+    const opt = select.options[select.selectedIndex];
+    const q = opt.dataset.query;
+    if (q) textarea.value = JSON.parse(q);
+  });
+
+  runBtn.addEventListener("click", async () => {
+    const queryText = textarea.value.trim();
+    if (!queryText) { alert("Please enter or select a query"); return; }
+
+    const selectedKey = select.value;
+    const opt = select.options[select.selectedIndex];
+    const originalQuery = opt && opt.dataset.query ? JSON.parse(opt.dataset.query) : "";
+    const useQueryKey = selectedKey && queryText === originalQuery;
+
+    runBtn.disabled = true;
+    status.innerHTML = '<span class="spinner"></span> Running...';
+
+    const body = useQueryKey
+      ? { db, query_type: "predefined", query_key: selectedKey }
+      : { db, query_type: "custom", custom_query: queryText };
+
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      renderResult(data);
+    } catch (e) {
+      resultArea.innerHTML = `<div class="card"><div class="error">Request failed: ${e.message}</div></div>`;
+    } finally {
+      runBtn.disabled = false;
+      status.innerHTML = "";
+    }
+  });
+
+  function renderResult(data) {
+    if (!data.success) {
+      resultArea.innerHTML = `
+        <div class="card">
+          <div class="error"><strong>Error:</strong> ${escapeHtml(data.error)}</div>
+          <p><span class="timing">${data.elapsed_ms} ms</span></p>
+        </div>`;
+      return;
+    }
+
+    const tableHtml = buildTable(data.columns, data.rows);
+    const chartId = "chart-" + Date.now();
+
+    resultArea.innerHTML = `
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <strong>${data.row_count}</strong> rows
+            <span class="timing">${data.elapsed_ms} ms</span>
+          </div>
+          <button onclick="toggleChart('${chartId}')">📊 Toggle chart</button>
+        </div>
+        <div id="chart-wrap-${chartId}" style="display:none; margin-top:16px; height:300px;">
+          <canvas id="${chartId}"></canvas>
+        </div>
+        <div style="margin-top:16px; overflow-x:auto">${tableHtml}</div>
+      </div>
+    `;
+
+    window["_chartData_" + chartId] = { columns: data.columns, rows: data.rows, chart: data.chart || null };
+  }
+
+  function buildTable(columns, rows) {
+    if (!rows.length) return "<p><em>No rows returned.</em></p>";
+    const head = columns.map(c => `<th>${escapeHtml(c)}</th>`).join("");
+    const body = rows.map(r =>
+      "<tr>" + columns.map(c => `<td>${formatCell(r[c])}</td>`).join("") + "</tr>"
+    ).join("");
+    return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function formatCell(v) {
+    if (v === null || v === undefined) return "<em>null</em>";
+    if (typeof v === "object") return `<code>${escapeHtml(JSON.stringify(v))}</code>`;
+    return escapeHtml(String(v));
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function toggleChart(chartId) {
+    const wrap = document.getElementById("chart-wrap-" + chartId);
+    const shown = wrap.style.display !== "none";
+    wrap.style.display = shown ? "none" : "block";
+    if (!shown && !wrap.dataset.rendered) {
+      renderChart(chartId);
+      wrap.dataset.rendered = "1";
+    }
+  }
+
+  function renderChart(chartId) {
+    const { columns, rows, chart } = window["_chartData_" + chartId];
+    if (rows.length === 0 || columns.length < 2) return;
+
+    const sep = (chart && chart.labelSeparator) ? chart.labelSeparator : " - ";
+    const presetType = chart && chart.type ? chart.type : null;
+
+    if (presetType === "scatter") {
+      const xCol = chart.xColumn;
+      const yCol = chart.yColumn;
+      const labelCol = chart.labelColumn;
+      if (!xCol || !yCol) return;
+
+      const points = rows
+        .map(r => ({
+          x: Number(r[xCol]),
+          y: Number(r[yCol]),
+          _label: labelCol ? r[labelCol] : undefined,
+        }))
+        .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+
+      if (!points.length) return;
+
+      new Chart(document.getElementById(chartId), {
+        type: "scatter",
+        data: {
+          datasets: [{ label: `${yCol} vs ${xCol}`, data: points, backgroundColor: "#2b6cb0" }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const raw = ctx.raw || {};
+                  const name = raw._label ? String(raw._label) + ": " : "";
+                  return name + `(${ctx.parsed.x}, ${ctx.parsed.y})`;
+                },
+              },
+            },
+          },
+        },
+      });
+      return;
+    }
+
+    if (presetType === "bar" || presetType === "line") {
+      const labelColumns = Array.isArray(chart.labelColumns) ? chart.labelColumns : [];
+      const labelColsPresent = labelColumns.filter(c => columns.includes(c));
+      const valueCol = (chart.valueColumn && columns.includes(chart.valueColumn)) ? chart.valueColumn : null;
+
+      const labels = rows.map(r => {
+        if (!labelColsPresent.length) return String(r[columns[0]]);
+        const parts = labelColsPresent
+          .map(c => r[c])
+          .filter(v => v !== null && v !== undefined)
+          .map(v => String(v));
+        return parts.length ? parts.join(sep) : String(r[columns[0]]);
+      });
+
+      let vCol = valueCol;
+      if (!vCol) {
+        vCol = columns.find((c, i) => i > 0 && rows.every(r => typeof r[c] === "number")) || columns[1];
+      }
+      const values = rows.map(r => Number(r[vCol]) || 0);
+
+      new Chart(document.getElementById(chartId), {
+        type: presetType,
+        data: {
+          labels,
+          datasets: [{
+            label: chart.valueColumn || vCol,
+            data: values,
+            backgroundColor: "#2b6cb0",
+            borderColor: "#2b6cb0",
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: true } },
+        },
+      });
+      return;
+    }
+
+    const labelCol = columns[0];
+    let valueCol = columns.find((c, i) => i > 0 && rows.every(r => typeof r[c] === "number"));
+    if (!valueCol) valueCol = columns[1];
+
+    const labels = rows.map(r => String(r[labelCol]));
+    const values = rows.map(r => Number(r[valueCol]) || 0);
+
+    new Chart(document.getElementById(chartId), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{ label: valueCol, data: values, backgroundColor: "#2b6cb0" }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: true } },
+      },
+    });
+  }
+</script>
+{% endblock %}

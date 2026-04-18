@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Data Warehouse Umbrella</h2>
+  <p>Explore the same data warehouse across three different backends.</p>
+</div>
+
+<div class="grid-3">
+  <a href="/explorer/postgres" style="text-decoration:none; color:inherit">
+    <div class="card db-card-pg">
+      <h3>PostgreSQL</h3>
+      <p style="color:#4a5568; font-size:14px">Relational star schema (Supabase)</p>
+      <button>Open Explorer →</button>
+    </div>
+  </a>
+  <a href="/explorer/neo4j" style="text-decoration:none; color:inherit">
+    <div class="card db-card-neo">
+      <h3>Neo4j</h3>
+      <p style="color:#4a5568; font-size:14px">Graph model with Cypher</p>
+      <button>Open Explorer →</button>
+    </div>
+  </a>
+  <a href="/explorer/mongo" style="text-decoration:none; color:inherit">
+    <div class="card db-card-mongo">
+      <h3>MongoDB</h3>
+      <p style="color:#4a5568; font-size:14px">Document model with aggregation pipelines</p>
+      <button>Open Explorer →</button>
+    </div>
+  </a>
+</div>
+
+<div class="card" style="margin-top:24px">
+  <h3 style="margin-top:0">Side-by-Side Comparison</h3>
+  <p>Run the same query on all three databases and compare results.</p>
+  <a href="/compare"><button>Open Comparison View</button></a>
+</div>
+{% endblock %}

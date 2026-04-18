@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}DW Umbrella{% endblock %}</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      background: #f5f6fa;
+      color: #222;
+    }
+    header {
+      background: #1a2332;
+      color: white;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    header h1 { font-size: 20px; margin: 0; }
+    header nav a {
+      color: #9fb4d1;
+      text-decoration: none;
+      margin-right: 16px;
+      font-size: 14px;
+    }
+    header nav a:hover { color: white; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    button, select, textarea, input {
+      font-family: inherit;
+      font-size: 14px;
+    }
+    button {
+      background: #2b6cb0;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover { background: #2c5282; }
+    button:disabled { background: #a0aec0; cursor: not-allowed; }
+    select, textarea, input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #cbd5e0;
+      border-radius: 4px;
+    }
+    textarea { font-family: "SF Mono", Menlo, monospace; min-height: 100px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    th { background: #edf2f7; font-weight: 600; }
+    .timing {
+      display: inline-block;
+      padding: 4px 10px;
+      background: #e6fffa;
+      color: #234e52;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .error {
+      background: #fff5f5;
+      color: #c53030;
+      padding: 12px;
+      border-radius: 4px;
+      border-left: 4px solid #c53030;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: #e2e8f0;
+      color: #2d3748;
+      margin-left: 8px;
+    }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    @media (max-width: 1000px) { .grid-3 { grid-template-columns: 1fr; } }
+    .db-card-pg { border-top: 4px solid #336791; }
+    .db-card-neo { border-top: 4px solid #018bff; }
+    .db-card-mongo { border-top: 4px solid #13aa52; }
+    .query-box {
+      background: #1a202c;
+      color: #cbd5e0;
+      padding: 12px;
+      border-radius: 4px;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #cbd5e0;
+      border-top-color: #2b6cb0;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Data Warehouse Umbrella Project</h1>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/compare">Compare All</a>
+      <a href="/explorer/postgres">PostgreSQL</a>
+      <a href="/explorer/neo4j">Neo4j</a>
+      <a href="/explorer/mongo">MongoDB</a>
+    </nav>
+  </header>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

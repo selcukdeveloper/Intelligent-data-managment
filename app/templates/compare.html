@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Side-by-Side Comparison{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Side-by-Side Comparison</h2>
+  <p>Run the same decision-support query on all three databases and compare results + timings.</p>
+
+  <label><strong>Choose a query:</strong></label>
+  <select id="query-key">
+    <option value="">— Choose —</option>
+    {% for key in query_keys %}
+      <option value="{{ key }}">{{ key }}</option>
+    {% endfor %}
+  </select>
+  <div style="margin-top:12px">
+    <button id="run-btn">▶ Run on all three</button>
+    <span id="status" style="margin-left:12px"></span>
+  </div>
+</div>
+
+<div id="results" class="grid-3"></div>
+
+<script>
+  const runBtn = document.getElementById("run-btn");
+  const status = document.getElementById("status");
+  const results = document.getElementById("results");
+
+  const DB_META = {
+    postgres: { label: "🐘 PostgreSQL", cls: "db-card-pg" },
+    neo4j: { label: "🕸️ Neo4j", cls: "db-card-neo" },
+    mongo: { label: "🍃 MongoDB", cls: "db-card-mongo" },
+  };
+
+  runBtn.addEventListener("click", async () => {
+    const key = document.getElementById("query-key").value;
+    if (!key) { alert("Select a query first"); return; }
+
+    runBtn.disabled = true;
+    status.innerHTML = '<span class="spinner"></span> Running on all three...';
+    results.innerHTML = "";
+
+    try {
+      const res = await fetch("/api/compare", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ query_key: key }),
+      });
+      const data = await res.json();
+      renderAll(data);
+    } catch (e) {
+      results.innerHTML = `<div class="card"><div class="error">${e.message}</div></div>`;
+    } finally {
+      runBtn.disabled = false;
+      status.innerHTML = "";
+    }
+  });
+
+  function renderAll(data) {
+    results.innerHTML = "";
+    for (const db of ["postgres", "neo4j", "mongo"]) {
+      const meta = DB_META[db];
+      const r = data[db];
+      const card = document.createElement("div");
+      card.className = "card " + meta.cls;
+      if (!r.success) {
+        card.innerHTML = `
+          <h3 style="margin-top:0">${meta.label}</h3>
+          <div class="error"><strong>Error:</strong> ${escapeHtml(r.error)}</div>
+          <p><span class="timing">${r.elapsed_ms} ms</span></p>
+          <details><summary>Query</summary><div class="query-box">${escapeHtml(r.query || "")}</div></details>
+        `;
+      } else {
+        card.innerHTML = `
+          <h3 style="margin-top:0">${meta.label}</h3>
+          <div><strong>${r.row_count}</strong> rows <span class="timing">${r.elapsed_ms} ms</span></div>
+          <details style="margin-top:8px"><summary>Query</summary><div class="query-box">${escapeHtml(r.query)}</div></details>
+          <div style="margin-top:12px; max-height:400px; overflow:auto">${buildTable(r.columns, r.rows)}</div>
+        `;
+      }
+      results.appendChild(card);
+    }
+  }
+
+  function buildTable(columns, rows) {
+    if (!rows.length) return "<p><em>No rows.</em></p>";
+    const head = columns.map(c => `<th>${escapeHtml(c)}</th>`).join("");
+    const body = rows.map(r =>
+      "<tr>" + columns.map(c => `<td>${formatCell(r[c])}</td>`).join("") + "</tr>"
+    ).join("");
+    return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function formatCell(v) {
+    if (v === null || v === undefined) return "<em>null</em>";
+    if (typeof v === "object") return `<code>${escapeHtml(JSON.stringify(v))}</code>`;
+    return escapeHtml(String(v));
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+</script>
+{% endblock %}
