@@ -27,21 +27,30 @@ QUERIES = {
     "monthly_revenue_trend": {
         "description": "Monthly revenue trend",
         "query": """{
-  "collection": "sales_fact",
+  "collection": "sales",
   "operation": "aggregate",
   "pipeline": [
     {
       "$group": {
-        "_id": { "year": "$date.year", "month": "$date.month" },
-        "revenue": { "$sum": "$total_amount" }
+        "_id": {
+          "year": "$date.year",
+          "month": "$date.month",
+          "month_name": "$date.month_name"
+        },
+        "revenue": { "$sum": "$sales_amount" }
       }
     },
-    { "$sort": { "_id.year": 1, "_id.month": 1 } },
+    {
+      "$sort": {
+        "_id.year": 1,
+        "_id.month": 1
+      }
+    },
     {
       "$project": {
         "_id": 0,
         "year": "$_id.year",
-        "month": "$_id.month",
+        "month_name": "$_id.month_name",
         "revenue": 1
       }
     }
@@ -98,8 +107,8 @@ QUERIES = {
 }""",
     },
 
-    "profit_by_region_state": {
-        "description": "Profit by region and state",
+    "profit_by_state": {
+        "description": "Profit by state",
         "query": """{
   "collection": "sales",
   "operation": "aggregate",

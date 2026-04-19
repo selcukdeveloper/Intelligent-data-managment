@@ -14,10 +14,14 @@ LIMIT 10;
         "description": "Monthly revenue trend",
         "query": """
 MATCH (s:Sale)-[:ON_DATE]->(:Date)-[:IN_MONTH]->(m:Month)
-RETURN m.year AS year,
-       m.month_name AS month,
-       SUM(s.sales_amount) AS revenue
-ORDER BY year, month;
+WITH m.year AS year,
+     m.month AS month_number,
+     m.month_name AS month,
+     SUM(s.sales_amount) AS revenue
+ORDER BY year, month_number
+RETURN year,
+       month,
+       round(revenue, 3) AS revenue;
 """.strip(),
     },
 
@@ -42,8 +46,8 @@ ORDER BY total_sales DESC;
 """.strip(),
     },
 
-    "profit_by_region_state": {
-        "description": "Profit by region and state",
+    "profit_by_state": {
+        "description": "Profit by state",
         "query": """
 MATCH (s:Sale)-[:SHIPPED_TO]->(st:State)
 RETURN st.state_name AS state,
