@@ -13,16 +13,24 @@ class MongoClient:
     def _get_db(self):
         if self._client is None:
             try:
-                ca_bundle = certifi.where()
+                client_kwargs = {
+                    "serverSelectionTimeoutMS": 10000,
+                    "connectTimeoutMS": 10000,
+                    "retryWrites": False,
+                }
+                uri_lower = self.uri.lower()
+                use_tls = (
+                    self.uri.startswith("mongodb+srv://")
+                    or "tls=true" in uri_lower
+                    or "ssl=true" in uri_lower
+                )
+                if use_tls:
+                    client_kwargs["tlsCAFile"] = certifi.where()
                 self._client = PyMongoClient(
                     self.uri,
-                    tlsCAFile=ca_bundle,
-                    tlsAllowInvalidCertificates=True,
-                    serverSelectionTimeoutMS=10000,
-                    connectTimeoutMS=10000,
-                    retryWrites=False
+                    **client_kwargs,
                 )
-                self._client.admin.command('ping')
+                self._client.admin.command("ping")
             except Exception as e:
                 raise ConnectionError(f"MongoDB connection failed: {str(e)}")
         return self._client[self.db_name]

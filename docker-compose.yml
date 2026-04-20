@@ -1,35 +1,211 @@
-# Cloud-only setup: Flask umbrella connecting to Supabase, Neo4j Aura, and MongoDB Atlas
-# All credentials come from .env file
-
 services:
   umbrella:
     build: .
     container_name: dw_umbrella
+    depends_on:
+      - postgres
+      - mongo
+      - neo4j
+      - kafka
+      - ksqldb-init
     ports:
       - "5000:5000"
     environment:
-      # --- PostgreSQL / Supabase ---
-      PG_HOST: ${PG_HOST}
+      # --- PostgreSQL ---
+      PG_HOST: ${PG_HOST:-postgres}
       PG_PORT: ${PG_PORT:-5432}
-      PG_DB: ${PG_DB:-postgres}
+      PG_DB: ${PG_DB:-ecommerce_dw}
       PG_USER: ${PG_USER:-postgres}
-      PG_PASSWORD: ${PG_PASSWORD}
+      PG_PASSWORD: ${PG_PASSWORD:-postgres}
+      PG_SSLMODE: ${PG_SSLMODE:-prefer}
 
-      # --- Neo4j Aura ---
-      NEO4J_URI: ${NEO4J_URI}
-      NEO4J_USER: ${NEO4J_USER}
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      # --- Neo4j ---
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-neo4jpassword}
 
-      # --- MongoDB Atlas ---
-      MONGO_URI: ${MONGO_URI}
-      MONGO_DB: ${MONGO_DB}
+      # --- MongoDB ---
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017}
+      MONGO_DB: ${MONGO_DB:-ecommerce_dw}
+
+      # --- Kafka streaming ---
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+      KAFKA_TOPIC_QUERY_EXECUTIONS: ${KAFKA_TOPIC_QUERY_EXECUTIONS:-dw.query.executions}
+      KAFKA_TOPIC_SALES: ${KAFKA_TOPIC_SALES:-dw.sales.transactions}
+      KAFKA_DATA_FILE: /data/sales_transactions.txt
     volumes:
-      - ./app:/app  # live-reload during dev
+      - ./app:/app
+      - ./kafka/data:/data:ro
+    restart: unless-stopped
     networks:
       - app-network
+
+  postgres:
+    image: postgres:16
+    container_name: dw_postgres
+    environment:
+      POSTGRES_DB: ${PG_DB:-ecommerce_dw}
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d ${PG_DB:-ecommerce_dw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app-network
+
+  mongo:
+    image: mongo:7
+    container_name: dw_mongo
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-ecommerce_dw}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app-network
+
+  neo4j:
+    image: neo4j:5.22
+    container_name: dw_neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_LOCAL_PASSWORD:-neo4jpassword}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - app-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: dw_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - app-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: dw_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - app-network
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.1
+    container_name: dw_schema_registry
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+    networks:
+      - app-network
+
+  ksqldb-server:
+    image: confluentinc/cp-ksqldb-server:7.6.1
+    container_name: dw_ksqldb_server
+    depends_on:
+      - kafka
+      - schema-registry
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_BOOTSTRAP_SERVERS: kafka:29092
+      KSQL_HOST_NAME: ksqldb-server
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      KSQL_KSQL_SERVICE_ID: dw_ksql_service_
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: "true"
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8088/info >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - app-network
+
+  ksqldb-cli:
+    image: confluentinc/cp-ksqldb-cli:7.6.1
+    container_name: dw_ksqldb_cli
+    depends_on:
+      ksqldb-server:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    tty: true
+    networks:
+      - app-network
+
+  data-producer:
+    build: .
+    container_name: dw_data_producer
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+      KAFKA_TOPIC_SALES: ${KAFKA_TOPIC_SALES:-dw.sales.transactions}
+      KAFKA_DATA_FILE: /data/sales_transactions.txt
+    volumes:
+      - ./kafka/data:/data:ro
+    profiles: ["producer"]
+    command: ["python", "-m", "streaming.data_producer"]
+    networks:
+      - app-network
+
+  ksqldb-init:
+    image: confluentinc/cp-ksqldb-cli:7.6.1
+    container_name: dw_ksqldb_init
+    depends_on:
+      ksqldb-server:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    volumes:
+      - ./kafka/ksql:/scripts:ro
+    command:
+      - -c
+      - |
+        cub ksql-server-ready ksqldb-server 8088 180
+        until curl -fsS http://ksqldb-server:8088/info >/dev/null; do
+          echo "Waiting for ksqlDB API readiness..."
+          sleep 2
+        done
+        ksql http://ksqldb-server:8088 < /scripts/init.sql
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+  mongo_data:
+  neo4j_data:
 
 networks:
   app-network:
     driver: bridge
-    driver_opts:
-      com.docker.network.enable_ipv6: "true"
