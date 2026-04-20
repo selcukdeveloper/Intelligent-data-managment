@@ -30,3 +30,4 @@ htmlcov/
 
 # AI / local tooling
 .claude/
+DEMO.md
