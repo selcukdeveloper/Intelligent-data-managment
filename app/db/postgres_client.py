@@ -11,7 +11,7 @@ class PostgresClient:
             "dbname": os.environ.get("PG_DB", "postgres"),
             "user": os.environ.get("PG_USER", "postgres"),
             "password": os.environ.get("PG_PASSWORD", ""),
-            "sslmode": os.environ.get("PG_SSLMODE", "prefer"),
+            "sslmode": "require",
             "connect_timeout": 10,
         }
 
