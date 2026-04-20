@@ -59,17 +59,16 @@ QUERIES = {
         """.strip(),
     },
 
-    "profit_by_region_state": {
-        "description": "Profit by region and state",
+    "profit_by_state": {
+        "description": "Profit by state",
         "query": """
             SELECT
-                l.region,
                 l.state,
                 SUM(f.profit_amount) AS total_profit
             FROM fact_sales f
             JOIN dim_location l
                 ON f.location_key = l.location_key
-            GROUP BY l.region, l.state
+            GROUP BY l.state
             ORDER BY total_profit DESC;
         """.strip(),
     },

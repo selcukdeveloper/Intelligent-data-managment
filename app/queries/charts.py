@@ -20,9 +20,9 @@ CHART_PRESETS = {
         "labelColumns": ["category"],
         "valueColumn": "total_sales",
     },
-    "profit_by_region_state": {
+    "profit_bystate": {
         "type": "bar",
-        "labelColumns": ["region", "state"],
+        "labelColumns": ["state"],
         "labelSeparator": " / ",
         "valueColumn": "total_profit",
     },
