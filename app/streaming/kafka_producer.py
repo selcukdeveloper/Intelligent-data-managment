@@ -30,7 +30,7 @@ class QueryEventProducer:
                 self._producer = KafkaProducer(
                     bootstrap_servers=self.bootstrap_servers,
                     value_serializer=lambda payload: json.dumps(payload).encode("utf-8"),
-                    acks="1",
+                    acks=1,
                     retries=2,
                     linger_ms=10,
                     request_timeout_ms=3000,
