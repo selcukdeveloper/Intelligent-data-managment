@@ -1,27 +1,21 @@
 -- =============================================================================
--- ksqlDB initialization script for the e-commerce DW umbrella.
---
--- Two independent streaming pipelines are defined here:
---
 --   Pipeline A — query-execution observability
 --     Topic     : dw.query.executions  (JSON, populated by the Flask app)
 --     Stream    : QUERY_EXECUTIONS_RAW
---     Aggregates: QUERY_EXECUTION_METRICS  (5-min tumbling window)
---                 FAILED_QUERY_EXECUTIONS  (filtered stream)
+--     Aggregates: QUERY_EXECUTION_METRICS
+--                 FAILED_QUERY_EXECUTIONS
 --
---   Pipeline B — streaming sales -> fact table   (Lab 9 pattern)
---     Topic     : dw.sales.transactions  (DELIMITED, populated by data_producer.py)
+--   Pipeline B — streaming sales -> fact table
+--     Topic     : dw.sales.transactions
 --     Stream    : SALES_TRANSACTIONS
 --     Aggregates: FACT_SALES_BY_PRODUCT_LOCATION
 --                 FACT_SALES_BY_CUSTOMER
---                 FACT_SALES_WINDOWED  (1-min tumbling window)
+--                 FACT_SALES_WINDOWED
 -- =============================================================================
 
 SET 'auto.offset.reset' = 'earliest';
 
--- -----------------------------------------------------------------------------
 -- Pipeline A: query-execution observability (JSON events from Flask)
--- -----------------------------------------------------------------------------
 
 CREATE OR REPLACE STREAM QUERY_EXECUTIONS_RAW (
   event_id     VARCHAR,
@@ -65,7 +59,7 @@ EMIT CHANGES;
 
 
 -- -----------------------------------------------------------------------------
--- Pipeline B: streaming sales transactions -> fact table (Lab 9 pattern)
+-- Pipeline B: streaming sales transactions -> fact table
 --
 -- The Python data_producer.py reads kafka/data/sales_transactions.txt and
 -- pushes one CSV record per message:
@@ -92,6 +86,7 @@ CREATE OR REPLACE STREAM SALES_TRANSACTIONS (
 -- AVG() is intentionally omitted: ksqlDB stores AVG's intermediate state as
 -- a STRUCT, which the source stream's DELIMITED format cannot serialise.
 -- COUNT and SUM use simple types and work fine.
+
 CREATE OR REPLACE TABLE FACT_SALES_BY_PRODUCT_LOCATION
 WITH (KEY_FORMAT = 'JSON') AS
 SELECT
