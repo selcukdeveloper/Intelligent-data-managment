@@ -1,17 +1,3 @@
-"""
-Sales transaction data producer (Lab 9 pattern).
-
-Reads CSV records from a file and pushes each line as a message to a Kafka
-topic. ksqlDB ingests the topic as a `SALES_TRANSACTIONS` stream
-(value_format='DELIMITED') and a continuous CREATE TABLE ... AS SELECT
-aggregates rows into live fact tables.
-
-Run from inside the docker network:
-    docker compose exec umbrella python -m streaming.data_producer
-
-Run from the host:
-    python app/streaming/data_producer.py
-"""
 from __future__ import annotations
 
 import argparse
@@ -29,7 +15,6 @@ DEFAULT_INTERVAL = 1.0
 
 
 def _default_data_path() -> Path:
-    """Pick the file path that exists in the current runtime."""
     candidates = [
         Path(os.environ.get("KAFKA_DATA_FILE", "")),
         Path("/data/sales_transactions.txt"),
@@ -42,7 +27,6 @@ def _default_data_path() -> Path:
 
 
 def _default_broker() -> str:
-    """`kafka:29092` inside the docker network, `localhost:9092` from host."""
     if os.environ.get("KAFKA_BOOTSTRAP_SERVERS"):
         return os.environ["KAFKA_BOOTSTRAP_SERVERS"]
     if Path("/.dockerenv").exists():
