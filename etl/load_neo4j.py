@@ -1,24 +1,3 @@
-"""
-Load the Kaggle "Superstore" CSV into Neo4j as a small graph that mirrors
-the star schema.
-
-Usage:
-    python etl/load_neo4j.py --csv dataset.csv
-
-Environment variables:
-    NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
-
-Graph model (see Methods §Neo4j Graph Design):
-
-    (:Sale {sales_fact_id, sales_amount, quantity, profit_amount})
-      -[:OF_PRODUCT]->      (:Product)-[:IN_CATEGORY]->(:Category)
-      -[:BY_CUSTOMER]->     (:Customer)
-      -[:SHIPPED_TO]->      (:State {region})
-      -[:ON_DATE]->         (:Date)-[:IN_MONTH]->(:Month {year, month,
-                                                          month_name})
-      -[:USES_SHIP_MODE]->  (:ShipMode)
-
-"""
 from __future__ import annotations
 
 import argparse
