@@ -22,6 +22,7 @@
       gap: 24px;
     }
     header h1 { font-size: 20px; margin: 0; }
+    header nav { flex: 1; }
     header nav a {
       color: #9fb4d1;
       text-decoration: none;
@@ -29,6 +30,38 @@
       font-size: 14px;
     }
     header nav a:hover { color: white; }
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #cbd5e0;
+    }
+    .role-chip {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .role-admin { background: #b7791f; color: #fffaf0; }
+    .role-tier2 { background: #2f855a; color: #f0fff4; }
+    .role-tier1 { background: #2c5282; color: #ebf8ff; }
+    .user-badge form {
+      display: inline;
+    }
+    .user-badge button {
+      background: transparent;
+      color: #9fb4d1;
+      border: 1px solid #4a5568;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .user-badge button:hover { background: #2d3748; color: white; }
     .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
     .card {
       background: white;
@@ -127,10 +160,22 @@
     <nav>
       <a href="/">Home</a>
       <a href="/compare">Compare All</a>
+      {% if can_ingest %}<a href="/ingest">Ingest CSV</a>{% endif %}
+      {% if can_edit_queries %}<a href="/admin/queries">Manage Queries</a>{% endif %}
+      {% if can_ingest %}<a href="/admin/customers">Manage Customers</a>{% endif %}
       <a href="/explorer/postgres">PostgreSQL</a>
       <a href="/explorer/neo4j">Neo4j</a>
       <a href="/explorer/mongo">MongoDB</a>
     </nav>
+    {% if current_user %}
+      <div class="user-badge">
+        <span>{{ current_user.username }}</span>
+        <span class="role-chip role-{{ current_user.role }}">{{ current_user.role }}</span>
+        <form method="post" action="/logout">
+          <button type="submit">Log out</button>
+        </form>
+      </div>
+    {% endif %}
   </header>
   <div class="container">
     {% block content %}{% endblock %}
