@@ -8,6 +8,7 @@ __pycache__/
 venv/
 ENV/
 env/
+help-folder/
 
 # Environment variables / secrets
 .env
@@ -31,3 +32,4 @@ htmlcov/
 # AI / local tooling
 .claude/
 DEMO.md
+reportnotes.md
