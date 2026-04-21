@@ -13,8 +13,17 @@
   </select>
 
   <div style="margin-top:16px">
-    <label><strong>Query:</strong></label>
-    <textarea id="query-text" placeholder="Select a predefined query above, or write your own here..."></textarea>
+    <label>
+      <strong>Query:</strong>
+      {% if not can_run_custom %}
+        <span class="pill" style="background:#fefcbf; color:#744210">
+          custom queries disabled for your role
+        </span>
+      {% endif %}
+    </label>
+    <textarea id="query-text"
+              {% if not can_run_custom %}readonly{% endif %}
+              placeholder="{% if can_run_custom %}Select a predefined query above, or write your own here...{% else %}Select a predefined query above.{% endif %}"></textarea>
   </div>
 
   <div style="margin-top:12px">
@@ -22,6 +31,7 @@
     <span id="status" style="margin-left:12px"></span>
   </div>
 </div>
+<script>window.__CAN_RUN_CUSTOM__ = {{ 'true' if can_run_custom else 'false' }};</script>
 
 <div id="result-area"></div>
 
@@ -41,12 +51,20 @@
 
   runBtn.addEventListener("click", async () => {
     const queryText = textarea.value.trim();
-    if (!queryText) { alert("Please enter or select a query"); return; }
-
     const selectedKey = select.value;
     const opt = select.options[select.selectedIndex];
     const originalQuery = opt && opt.dataset.query ? JSON.parse(opt.dataset.query) : "";
-    const useQueryKey = selectedKey && queryText === originalQuery;
+    const canRunCustom = !!window.__CAN_RUN_CUSTOM__;
+
+    if (!canRunCustom && !selectedKey) {
+      alert("Please select a predefined query. Custom queries are not available for your role.");
+      return;
+    }
+    if (!queryText) { alert("Please enter or select a query"); return; }
+
+    const useQueryKey = !canRunCustom
+      ? !!selectedKey
+      : (selectedKey && queryText === originalQuery);
 
     runBtn.disabled = true;
     status.innerHTML = '<span class="spinner"></span> Running...';
