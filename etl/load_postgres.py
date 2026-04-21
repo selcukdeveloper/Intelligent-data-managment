@@ -1,13 +1,3 @@
-"""
-Load the Kaggle "Superstore" CSV into the PostgreSQL star schema.
-
-Usage:
-    python etl/load_postgres.py --csv dataset.csv
-
-Environment variables expected by this script (see app/db/postgres_client.py for the same variables used by the Flask app):
-    PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASSWORD
-
-"""
 from __future__ import annotations
 
 import argparse
