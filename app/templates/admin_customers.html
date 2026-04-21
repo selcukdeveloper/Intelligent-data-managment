@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}Manage customer data{% endblock %}
+{% block content %}
+<style>
+  .search-bar { display: flex; gap: 8px; align-items: center; }
+  .search-bar input[type="text"] { flex: 1; }
+  .customer-row { padding: 10px 0; border-top: 1px solid #e2e8f0; }
+  .customer-row:first-of-type { border-top: none; }
+  .customer-row .head {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .customer-row .name { font-weight: 600; min-width: 180px; }
+  .customer-row .stats { color: #4a5568; font-size: 13px; flex: 1; }
+  .btn-danger { background: #c53030; }
+  .btn-danger:hover { background: #9b2c2c; }
+  .btn-warn { background: #dd6b20; }
+  .btn-warn:hover { background: #9c4221; }
+  .btn-ghost { background: #edf2f7; color: #2d3748; }
+  .btn-ghost:hover { background: #cbd5e0; }
+  .txn-panel { display: none; margin-top: 10px; border: 1px solid #e2e8f0;
+               border-radius: 4px; padding: 10px; background: #f7fafc; }
+  .txn-panel.open { display: block; }
+  .txn-panel table { margin-top: 10px; }
+  .txn-panel td, .txn-panel th { font-size: 12px; }
+  .warn-note {
+    background: #fffaf0; color: #7c2d12;
+    padding: 8px 12px; border-left: 3px solid #dd6b20;
+    border-radius: 3px; font-size: 13px; margin: 8px 0;
+  }
+  .result-box {
+    background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 4px;
+    padding: 10px 12px; margin-top: 10px; font-family: "SF Mono", Menlo, monospace;
+    font-size: 12px; white-space: pre-wrap;
+  }
+  .result-box.err { background: #fff5f5; border-color: #feb2b2; }
+</style>
+
+<div class="card">
+  <h2 style="margin-top:0">Manage customer data</h2>
+  <p style="color:#4a5568">
+    Search by customer name to see their orders across the warehouse,
+    then either delete all of their data or delete selected transactions.
+  </p>
+  <div class="search-bar">
+    <input id="q" type="text" placeholder="Search customer name..." autofocus />
+    <button id="search-btn">Search</button>
+  </div>
+</div>
+
+<div class="card" id="results-card" style="display:none">
+  <h3 style="margin-top:0" id="results-title">Results</h3>
+  <div id="results-list"></div>
+</div>
+
+<script>
+  const qInput = document.getElementById("q");
+  const searchBtn = document.getElementById("search-btn");
+  const resultsCard = document.getElementById("results-card");
+  const resultsTitle = document.getElementById("results-title");
+  const resultsList = document.getElementById("results-list");
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g,
+      c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  qInput.addEventListener("keydown", (e) => { if (e.key === "Enter") searchBtn.click(); });
+  searchBtn.addEventListener("click", doSearch);
+
+  async function doSearch() {
+    const q = qInput.value.trim();
+    if (!q) return;
+    searchBtn.disabled = true;
+    resultsCard.style.display = "block";
+    resultsTitle.textContent = "Searching...";
+    resultsList.innerHTML = '<span class="spinner"></span>';
+
+    let res, data;
+    try {
+      res = await fetch("/api/admin/customers/search?q=" + encodeURIComponent(q));
+      data = await res.json();
+    } catch (e) {
+      resultsList.innerHTML = '<div class="error">Network error</div>';
+      searchBtn.disabled = false; return;
+    }
+    searchBtn.disabled = false;
+
+    if (!res.ok) {
+      resultsList.innerHTML = '<div class="error">' + esc(data.error || res.status) + '</div>';
+      return;
+    }
+    const customers = data.customers || [];
+    resultsTitle.textContent = "Matches (" + customers.length + ")";
+    if (!customers.length) {
+      resultsList.innerHTML = '<em>No customers found.</em>';
+      return;
+    }
+
+    resultsList.innerHTML = customers.map(c => {
+      const name = esc(c.customer_name);
+      return '<div class="customer-row" data-name="' + name + '">' +
+        '<div class="head">' +
+          '<div class="name">' + name + '</div>' +
+          '<div class="stats">' +
+            c.order_count + ' orders · $' +
+            Number(c.total_sales).toFixed(2) + ' sales · $' +
+            Number(c.total_profit).toFixed(2) + ' profit' +
+          '</div>' +
+          '<button class="btn-ghost view-btn">View transactions</button>' +
+          '<button class="btn-warn delete-some-btn" style="display:none">Delete selected</button>' +
+          '<button class="btn-danger delete-all-btn">Delete ALL data</button>' +
+        '</div>' +
+        '<div class="txn-panel"><div class="txn-inner"><em>Loading...</em></div></div>' +
+      '</div>';
+    }).join("");
+
+    document.querySelectorAll(".customer-row").forEach(wireCustomerRow);
+  }
+
+  function wireCustomerRow(row) {
+    const name = row.dataset.name;
+    const panel = row.querySelector(".txn-panel");
+    const inner = row.querySelector(".txn-inner");
+    const viewBtn = row.querySelector(".view-btn");
+    const delSomeBtn = row.querySelector(".delete-some-btn");
+    const delAllBtn = row.querySelector(".delete-all-btn");
+
+    viewBtn.addEventListener("click", async () => {
+      if (panel.classList.contains("open")) {
+        panel.classList.remove("open");
+        delSomeBtn.style.display = "none";
+        return;
+      }
+      panel.classList.add("open");
+      inner.innerHTML = '<span class="spinner"></span> loading...';
+      let res, data;
+      try {
+        res = await fetch("/api/admin/customers/" + encodeURIComponent(name) + "/transactions");
+        data = await res.json();
+      } catch (e) { inner.innerHTML = '<div class="error">Network error</div>'; return; }
+      if (!res.ok) { inner.innerHTML = '<div class="error">' + esc(data.error) + '</div>'; return; }
+
+      const txns = data.transactions || [];
+      if (!txns.length) {
+        inner.innerHTML = '<em>No transactions in MongoDB for this customer.</em>';
+        return;
+      }
+      inner.innerHTML =
+        '<div class="warn-note">' +
+          '“Delete selected” removes each chosen line-item from <strong>all three backends</strong>. ' +
+          'Rows bulk-loaded before the <code>order_id / line_no</code> migration lack those columns and ' +
+          'can only be purged from PostgreSQL via <strong>“Delete ALL data”</strong>; the response below shows ' +
+          'exactly how many rows each backend actually removed.' +
+        '</div>' +
+        '<table>' +
+          '<thead><tr>' +
+            '<th><input type="checkbox" class="check-all" /></th>' +
+            '<th>sales_fact_id</th><th>date</th><th>product</th><th>category</th>' +
+            '<th>state</th><th>ship</th><th>sales</th><th>qty</th><th>profit</th>' +
+          '</tr></thead>' +
+          '<tbody>' + txns.map(t => (
+            '<tr>' +
+              '<td><input type="checkbox" class="row-check" value="' + esc(t.sales_fact_id) + '" /></td>' +
+              '<td style="font-family:\'SF Mono\',Menlo,monospace">' + esc(t.sales_fact_id) + '</td>' +
+              '<td>' + esc(t.date) + '</td>' +
+              '<td>' + esc(t.product_name) + '</td>' +
+              '<td>' + esc(t.category) + '</td>' +
+              '<td>' + esc(t.state) + '</td>' +
+              '<td>' + esc(t.ship_mode) + '</td>' +
+              '<td>' + Number(t.sales_amount).toFixed(2) + '</td>' +
+              '<td>' + t.quantity + '</td>' +
+              '<td>' + Number(t.profit_amount).toFixed(2) + '</td>' +
+            '</tr>'
+          )).join("") + '</tbody>' +
+        '</table>';
+
+      delSomeBtn.style.display = "inline-block";
+      const checkAll = inner.querySelector(".check-all");
+      checkAll.addEventListener("change", () => {
+        inner.querySelectorAll(".row-check").forEach(c => c.checked = checkAll.checked);
+      });
+    });
+
+    delSomeBtn.addEventListener("click", async () => {
+      const ids = Array.from(row.querySelectorAll(".row-check:checked")).map(c => c.value);
+      if (!ids.length) { alert("Select at least one transaction."); return; }
+      if (!confirm("Delete " + ids.length + " transaction(s) for '" + name + "' from all three backends?")) return;
+
+      delSomeBtn.disabled = true;
+      try {
+        const res = await fetch("/api/admin/transactions", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sales_fact_ids: ids, customer_name: name }),
+        });
+        const data = await res.json();
+        const box = document.createElement("div");
+        box.className = "result-box" + (res.ok ? "" : " err");
+        box.textContent = JSON.stringify(data.results || data, null, 2);
+        inner.appendChild(box);
+
+        if (res.ok && data.customer_summary) {
+          const s = data.customer_summary;
+          const statsEl = row.querySelector(".head .stats");
+          if (statsEl) {
+            statsEl.textContent =
+              s.order_count + " orders · $" +
+              Number(s.total_sales).toFixed(2) + " sales · $" +
+              Number(s.total_profit).toFixed(2) + " profit";
+          }
+        }
+
+        if (res.ok) {
+          panel.classList.remove("open");
+          delSomeBtn.style.display = "none";
+          setTimeout(() => viewBtn.click(), 120);
+        }
+      } catch (e) {
+        alert("Network error");
+      } finally {
+        delSomeBtn.disabled = false;
+      }
+    });
+
+    delAllBtn.addEventListener("click", async () => {
+      if (!confirm("Permanently delete ALL data for '" + name + "' from PostgreSQL, MongoDB, and Neo4j?\n\nThis cannot be undone.")) return;
+      delAllBtn.disabled = true;
+      try {
+        const res = await fetch("/api/admin/customers/" + encodeURIComponent(name), { method: "DELETE" });
+        const data = await res.json();
+        const box = document.createElement("div");
+        box.className = "result-box" + (res.ok ? "" : " err");
+        box.textContent = JSON.stringify(data.results, null, 2);
+        panel.classList.add("open");
+        inner.innerHTML = "";
+        inner.appendChild(box);
+        row.querySelector(".head .stats").textContent = "Deleted.";
+        viewBtn.disabled = true;
+        delSomeBtn.disabled = true;
+      } catch (e) {
+        alert("Network error");
+      } finally {
+        delAllBtn.disabled = false;
+      }
+    });
+  }
+</script>
+{% endblock %}
