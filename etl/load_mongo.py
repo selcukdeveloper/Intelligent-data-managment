@@ -1,32 +1,3 @@
-"""
-Load the Kaggle "Superstore" CSV into MongoDB as denormalised `sales`
-documents.
-
-Usage:
-    python etl/load_mongo.py --csv dataset.csv
-
-Environment variables:
-    MONGO_URI, MONGO_DB (see `.env.example`)
-
-One document per order line. Dimensions are embedded so that every
-analytical query the umbrella UI runs can be answered without a
-`$lookup` join.
-
-Document shape:
-
-    {
-      "sales_fact_id":  "<order_id>-<line_no>",
-      "sales_amount":   261.96,
-      "quantity":       2,
-      "profit_amount":  41.91,
-      "product":  { "product_name": "...", "category": "..." },
-      "customer": { "customer_name": "..." },
-      "date":     { "day": 8, "month": 11, "month_name": "November",
-                    "year": 2016 },
-      "location": { "state": "Kentucky", "region": "South" },
-      "ship_mode": "Second Class"
-    }
-"""
 from __future__ import annotations
 
 import argparse
@@ -113,7 +84,7 @@ def load(csv_path: Path) -> None:
     if docs:
         db.sales.insert_many(docs)
 
-    print(f"Loaded into {db.name}.sales  —  total: {db.sales.count_documents({})}")
+    print(f"Loaded into {db.name}.sales  total: {db.sales.count_documents({})}")
 
 
 def main(argv: list[str] | None = None) -> int:
