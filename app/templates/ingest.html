@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Ingest CSV{% endblock %}
+{% block content %}
+<style>
+  .step-heading {
+    color: #4a5568; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .preview-table th, .preview-table td {
+    font-size: 12px; white-space: nowrap;
+  }
+  .btn-accept { background: #2f855a; }
+  .btn-accept:hover { background: #276749; }
+  .btn-ghost { background: #edf2f7; color: #2d3748; }
+  .btn-ghost:hover { background: #cbd5e0; }
+  .skip-note {
+    background: #fffaf0; color: #7c2d12;
+    padding: 6px 10px; border-left: 3px solid #dd6b20;
+    border-radius: 3px; font-size: 13px; margin: 4px 0;
+  }
+</style>
+
+<div class="card">
+  <h2 style="margin-top:0">Bulk ingest — CSV → all three backends</h2>
+  <p style="color:#4a5568">
+    Upload a Superstore-format CSV. First you'll see a preview of the
+    parsed rows. When you accept, each row is written directly to
+    PostgreSQL (star schema), MongoDB (embedded document), and Neo4j
+    (Sale + dimension nodes + relationships).
+  </p>
+
+  <div class="step-heading">Step 1 — choose a file</div>
+  <form id="upload-form">
+    <input type="file" id="csv-file" name="csv" accept=".csv" required />
+    <button type="submit" id="preview-btn" style="margin-left:8px">Preview</button>
+    <span id="upload-status" style="margin-left:12px; color:#4a5568"></span>
+  </form>
+</div>
+
+<div class="card" id="preview-card" style="display:none">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+    <div>
+      <div class="step-heading">Step 2 — review &amp; accept</div>
+      <div style="font-size:15px; font-weight:600" id="preview-title">Preview</div>
+    </div>
+    <div>
+      <span class="pill" id="preview-count">0 rows</span>
+      <span class="pill" id="preview-skip" style="background:#fed7aa; color:#7c2d12; display:none">0 skipped</span>
+    </div>
+  </div>
+
+  <div id="skip-notes"></div>
+
+  <div style="overflow-x:auto; max-height:400px; border:1px solid #e2e8f0; border-radius:4px">
+    <table class="preview-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>sales_fact_id</th>
+          <th>date</th>
+          <th>customer</th>
+          <th>product</th>
+          <th>category</th>
+          <th>state</th>
+          <th>ship mode</th>
+          <th>sales</th>
+          <th>qty</th>
+          <th>profit</th>
+        </tr>
+      </thead>
+      <tbody id="preview-body"></tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:14px; display:flex; gap:8px; align-items:center">
+    <button class="btn-accept" id="accept-btn">✓ Accept &amp; Ingest</button>
+    <button class="btn-ghost" id="cancel-btn">Cancel</button>
+    <span id="commit-status" style="margin-left:8px; color:#4a5568"></span>
+  </div>
+</div>
+
+<div class="card" id="results-card" style="display:none">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+    <div>
+      <div class="step-heading">Step 3 — live fan-out results</div>
+      <div style="font-size:15px; font-weight:600">Writes per backend</div>
+    </div>
+    <div>
+      <span class="pill" style="background:#c6f6d5; color:#22543d" id="count-ok">ok: 0</span>
+      <span class="pill" style="background:#fed7d7; color:#742a2a" id="count-err">errors: 0</span>
+      <span class="pill" id="count-total">processed: 0</span>
+    </div>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>sales_fact_id</th>
+          <th>customer</th>
+          <th>sales</th>
+          <th>PostgreSQL</th>
+          <th>MongoDB</th>
+          <th>Neo4j</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  const uploadForm     = document.getElementById("upload-form");
+  const fileInput      = document.getElementById("csv-file");
+  const previewBtn     = document.getElementById("preview-btn");
+  const uploadStatus   = document.getElementById("upload-status");
+
+  const previewCard    = document.getElementById("preview-card");
+  const previewTitle   = document.getElementById("preview-title");
+  const previewCount   = document.getElementById("preview-count");
+  const previewSkip    = document.getElementById("preview-skip");
+  const previewBody    = document.getElementById("preview-body");
+  const skipNotes      = document.getElementById("skip-notes");
+  const acceptBtn      = document.getElementById("accept-btn");
+  const cancelBtn      = document.getElementById("cancel-btn");
+  const commitStatus   = document.getElementById("commit-status");
+
+  const resultsCard    = document.getElementById("results-card");
+  const tbody          = document.getElementById("results-body");
+  const countOk        = document.getElementById("count-ok");
+  const countErr       = document.getElementById("count-err");
+  const countTotal     = document.getElementById("count-total");
+
+  let pendingEvents = [];
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g,
+      c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function cellHtml(outcome) {
+    if (outcome === "ok") return '<span style="color:#22543d; font-weight:600">✓ ok</span>';
+    return '<span style="color:#c53030" title="' + String(outcome).replace(/"/g, "&quot;") + '">✗ ' + escapeHtml(outcome) + '</span>';
+  }
+
+  uploadForm.addEventListener("submit", async (evt) => {
+    evt.preventDefault();
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    previewBtn.disabled = true;
+    uploadStatus.innerHTML = '<span class="spinner"></span> parsing...';
+    previewCard.style.display = "none";
+    resultsCard.style.display = "none";
+
+    const fd = new FormData();
+    fd.append("csv", file);
+
+    let res;
+    try { res = await fetch("/api/ingest/preview", { method: "POST", body: fd }); }
+    catch (e) { uploadStatus.innerHTML = '<span class="error">Network error</span>'; previewBtn.disabled = false; return; }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      uploadStatus.innerHTML = '<span class="error">' + (err.error || ("HTTP " + res.status)) + '</span>';
+      previewBtn.disabled = false;
+      return;
+    }
+
+    const data = await res.json();
+    pendingEvents = data.events || [];
+    uploadStatus.textContent = "";
+    previewBtn.disabled = false;
+
+    previewTitle.textContent = "Preview — " + escapeHtml(data.filename || "upload.csv");
+    previewCount.textContent = pendingEvents.length + " rows ready";
+    if ((data.skipped || []).length) {
+      previewSkip.textContent = data.skipped.length + " skipped";
+      previewSkip.style.display = "inline-block";
+      skipNotes.innerHTML = data.skipped.map(
+        s => '<div class="skip-note">Line ' + s.line + ' — ' + escapeHtml(s.reason) + '</div>'
+      ).join("");
+    } else {
+      previewSkip.style.display = "none";
+      skipNotes.innerHTML = "";
+    }
+
+    previewBody.innerHTML = pendingEvents.map((ev, i) => {
+      return "<tr>" +
+        "<td>" + (i + 1) + "</td>" +
+        "<td style=\"font-family:'SF Mono',Menlo,monospace\">" + escapeHtml(ev.sales_fact_id) + "</td>" +
+        "<td>" + escapeHtml(ev.order_date) + "</td>" +
+        "<td>" + escapeHtml(ev.customer_name) + "</td>" +
+        "<td>" + escapeHtml(ev.product_name) + "</td>" +
+        "<td>" + escapeHtml(ev.category) + "</td>" +
+        "<td>" + escapeHtml(ev.state) + "</td>" +
+        "<td>" + escapeHtml(ev.ship_mode) + "</td>" +
+        "<td>" + Number(ev.sales_amount).toFixed(2) + "</td>" +
+        "<td>" + ev.quantity + "</td>" +
+        "<td>" + Number(ev.profit_amount).toFixed(2) + "</td>" +
+      "</tr>";
+    }).join("");
+
+    acceptBtn.disabled = pendingEvents.length === 0;
+    previewCard.style.display = "block";
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    pendingEvents = [];
+    previewCard.style.display = "none";
+    resultsCard.style.display = "none";
+    fileInput.value = "";
+    uploadStatus.textContent = "";
+  });
+
+  acceptBtn.addEventListener("click", async () => {
+    if (!pendingEvents.length) return;
+
+    acceptBtn.disabled = true;
+    cancelBtn.disabled = true;
+    commitStatus.innerHTML = '<span class="spinner"></span> writing to backends...';
+
+    tbody.innerHTML = "";
+    resultsCard.style.display = "block";
+    let ok = 0, err = 0, total = 0;
+    countOk.textContent = "ok: 0";
+    countErr.textContent = "errors: 0";
+    countTotal.textContent = "processed: 0";
+
+    let response;
+    try {
+      response = await fetch("/api/ingest/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: pendingEvents }),
+      });
+    } catch (e) {
+      commitStatus.innerHTML = '<span class="error">Network error</span>';
+      acceptBtn.disabled = false; cancelBtn.disabled = false;
+      return;
+    }
+
+    if (!response.ok) {
+      commitStatus.innerHTML = '<span class="error">HTTP ' + response.status + '</span>';
+      acceptBtn.disabled = false; cancelBtn.disabled = false;
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch (_) { continue; }
+
+        if (msg.type === "row") {
+          total += 1;
+          const allOk = msg.postgres === "ok" && msg.mongo === "ok" && msg.neo4j === "ok";
+          if (allOk) ok += 1; else err += 1;
+          const tr = document.createElement("tr");
+          tr.innerHTML =
+            "<td>" + total + "</td>" +
+            "<td style=\"font-family:'SF Mono',Menlo,monospace; font-size:12px\">" +
+              escapeHtml(msg.sales_fact_id) + "</td>" +
+            "<td>" + escapeHtml(msg.customer_name) + "</td>" +
+            "<td>" + (msg.sales_amount != null ? Number(msg.sales_amount).toFixed(2) : "—") + "</td>" +
+            "<td>" + cellHtml(msg.postgres) + "</td>" +
+            "<td>" + cellHtml(msg.mongo) + "</td>" +
+            "<td>" + cellHtml(msg.neo4j) + "</td>";
+          tbody.appendChild(tr);
+          countOk.textContent = "ok: " + ok;
+          countErr.textContent = "errors: " + err;
+          countTotal.textContent = "processed: " + total;
+        } else if (msg.type === "done") {
+          commitStatus.innerHTML = '<span class="timing">finished — ' + msg.processed + ' processed</span>';
+        } else if (msg.type === "error") {
+          commitStatus.innerHTML = '<span class="error">' + escapeHtml(msg.message) + '</span>';
+        }
+      }
+    }
+    acceptBtn.disabled = false;
+    cancelBtn.disabled = false;
+  });
+</script>
+{% endblock %}
