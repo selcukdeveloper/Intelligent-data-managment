@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Manage predefined queries{% endblock %}
+{% block content %}
+<style>
+  .query-row { border-top: 1px solid #e2e8f0; padding: 14px 0; }
+  .query-row:first-of-type { border-top: none; }
+  .query-head { display: flex; align-items: center; gap: 12px; }
+  .query-head .key { font-family: "SF Mono", Menlo, monospace; font-weight: 600; }
+  .query-head .desc { color: #4a5568; flex: 1; }
+  .query-head button { margin-left: 4px; }
+  .editor { display: none; margin-top: 12px; }
+  .editor.open { display: block; }
+  .editor label { display: block; font-weight: 600; margin-top: 10px; font-size: 13px; }
+  .editor textarea { font-family: "SF Mono", Menlo, monospace; min-height: 120px; }
+  .editor .actions { margin-top: 10px; display: flex; gap: 8px; }
+  .btn-danger { background: #c53030; }
+  .btn-danger:hover { background: #9b2c2c; }
+  .btn-ghost { background: #edf2f7; color: #2d3748; }
+  .btn-ghost:hover { background: #cbd5e0; }
+  .badge-custom { background: #faf089; color: #744210; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-builtin { background: #bee3f8; color: #1a365d; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-edited { background: #fed7aa; color: #7c2d12; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+</style>
+
+<div class="card">
+  <h2 style="margin-top:0">Manage predefined queries</h2>
+  <p style="color:#4a5568">
+    Each query key is stored once and implemented in all three backends.
+    Changes here are saved to
+    <code>app/queries/overrides.json</code> and take effect immediately.
+  </p>
+  <button id="new-btn">+ New query</button>
+</div>
+
+<div class="card" id="new-card" style="display:none">
+  <h3 style="margin-top:0">New query</h3>
+  <div class="editor open">
+    <label>Key (unique identifier, e.g. <code>revenue_by_city</code>)</label>
+    <input type="text" id="new-key" placeholder="my_new_query" />
+    <label>Description</label>
+    <input type="text" id="new-desc" placeholder="What this query answers" />
+    <label>PostgreSQL (SQL)</label>
+    <textarea id="new-postgres" placeholder="SELECT ..."></textarea>
+    <label>Neo4j (Cypher)</label>
+    <textarea id="new-neo4j" placeholder="MATCH ..."></textarea>
+    <label>MongoDB (JSON spec)</label>
+    <textarea id="new-mongo" placeholder='{"collection": "sales", "operation": "aggregate", "pipeline": [...]}'></textarea>
+    <div class="actions">
+      <button id="save-new">Save</button>
+      <button class="btn-ghost" id="cancel-new">Cancel</button>
+      <span id="new-status" style="margin-left:8px"></span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Existing queries ({{ queries | length }})</h3>
+  {% for q in queries %}
+    <div class="query-row" data-key="{{ q.key }}">
+      <div class="query-head">
+        <span class="key">{{ q.key }}</span>
+        {% if q.is_builtin and q.has_override %}
+          <span class="badge-edited">edited</span>
+        {% elif q.is_builtin %}
+          <span class="badge-builtin">built-in</span>
+        {% else %}
+          <span class="badge-custom">custom</span>
+        {% endif %}
+        <span class="desc">{{ q.description }}</span>
+        <button class="btn-ghost edit-btn">Edit</button>
+        <button class="btn-danger delete-btn">Delete</button>
+      </div>
+      <div class="editor">
+        <label>Description</label>
+        <input type="text" class="desc-input" value="{{ q.description }}" />
+        <label>PostgreSQL (SQL)</label>
+        <textarea class="pg-input">{{ q.postgres }}</textarea>
+        <label>Neo4j (Cypher)</label>
+        <textarea class="neo-input">{{ q.neo4j }}</textarea>
+        <label>MongoDB (JSON spec)</label>
+        <textarea class="mongo-input">{{ q.mongo }}</textarea>
+        <div class="actions">
+          <button class="save-btn">Save</button>
+          <button class="btn-ghost cancel-btn">Cancel</button>
+          <span class="row-status" style="margin-left:8px"></span>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<script>
+  document.getElementById("new-btn").addEventListener("click", () => {
+    document.getElementById("new-card").style.display = "block";
+  });
+  document.getElementById("cancel-new").addEventListener("click", () => {
+    document.getElementById("new-card").style.display = "none";
+    ["new-key", "new-desc", "new-postgres", "new-neo4j", "new-mongo"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    document.getElementById("new-status").textContent = "";
+  });
+
+  document.getElementById("save-new").addEventListener("click", async () => {
+    const payload = {
+      key:         document.getElementById("new-key").value.trim(),
+      description: document.getElementById("new-desc").value.trim(),
+      postgres:    document.getElementById("new-postgres").value,
+      neo4j:       document.getElementById("new-neo4j").value,
+      mongo:       document.getElementById("new-mongo").value,
+    };
+    const status = document.getElementById("new-status");
+    status.innerHTML = '<span class="spinner"></span> saving...';
+    try {
+      const res = await fetch("/api/admin/queries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        status.innerHTML = '<span class="error" style="padding:4px 8px">' + (data.error || res.status) + '</span>';
+        return;
+      }
+      status.textContent = "saved, reloading...";
+      location.reload();
+    } catch (e) {
+      status.textContent = "network error";
+    }
+  });
+
+  document.querySelectorAll(".query-row").forEach(row => {
+    const editor = row.querySelector(".editor");
+    row.querySelector(".edit-btn").addEventListener("click", () => {
+      editor.classList.toggle("open");
+    });
+    row.querySelector(".cancel-btn").addEventListener("click", () => {
+      editor.classList.remove("open");
+    });
+    row.querySelector(".save-btn").addEventListener("click", async () => {
+      const payload = {
+        key:         row.dataset.key,
+        description: row.querySelector(".desc-input").value.trim(),
+        postgres:    row.querySelector(".pg-input").value,
+        neo4j:       row.querySelector(".neo-input").value,
+        mongo:       row.querySelector(".mongo-input").value,
+      };
+      const status = row.querySelector(".row-status");
+      status.innerHTML = '<span class="spinner"></span> saving...';
+      try {
+        const res = await fetch("/api/admin/queries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          status.innerHTML = '<span class="error" style="padding:4px 8px">' + (data.error || res.status) + '</span>';
+          return;
+        }
+        status.textContent = "saved";
+        setTimeout(() => location.reload(), 400);
+      } catch (e) {
+        status.textContent = "network error";
+      }
+    });
+    row.querySelector(".delete-btn").addEventListener("click", async () => {
+      const key = row.dataset.key;
+      if (!confirm("Delete predefined query \"" + key + "\"? Built-ins are masked and can be restored by deleting the override JSON.")) return;
+      try {
+        const res = await fetch("/api/admin/queries/" + encodeURIComponent(key), { method: "DELETE" });
+        if (!res.ok) { alert("HTTP " + res.status); return; }
+        location.reload();
+      } catch (e) { alert("network error"); }
+    });
+  });
+</script>
+{% endblock %}
