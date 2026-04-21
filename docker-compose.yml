@@ -7,23 +7,21 @@ services:
     ports:
       - "5000:5000"
     environment:
-      # --- PostgreSQL / Supabase ---
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-dev-only-change-me-in-prod}
+
       PG_HOST: ${PG_HOST}
       PG_PORT: ${PG_PORT:-5432}
       PG_DB:   ${PG_DB:-postgres}
       PG_USER: ${PG_USER:-postgres}
       PG_PASSWORD: ${PG_PASSWORD}
 
-      # --- Neo4j Aura ---
       NEO4J_URI:      ${NEO4J_URI}
       NEO4J_USER:     ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
 
-      # --- MongoDB Atlas ---
       MONGO_URI: ${MONGO_URI}
       MONGO_DB:  ${MONGO_DB}
 
-      # --- Kafka observability pipeline ---
       KAFKA_ENABLED:                 ${KAFKA_ENABLED:-true}
       KAFKA_BOOTSTRAP_SERVERS:       ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
       KAFKA_TOPIC_QUERY_EXECUTIONS:  ${KAFKA_TOPIC_QUERY_EXECUTIONS:-dw.query.executions}
@@ -144,8 +142,51 @@ services:
       KAFKA_DATA_FILE:         /data/sales_transactions.txt
     volumes:
       - ./kafka/data:/data:ro
-    profiles: ["producer"]    # only runs when the "producer" profile is enabled
+    profiles: ["producer"]
     command: ["python", "-m", "streaming.data_producer"]
+    networks:
+      - app-network
+
+  sales-ingest-producer:
+    build: .
+    container_name: dw_sales_ingest_producer
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS:     ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+      KAFKA_TOPIC_SALES_INGEST:    ${KAFKA_TOPIC_SALES_INGEST:-dw.sales.ingest}
+      INGEST_CSV_FILE:             /data/dataset_add.csv
+    volumes:
+      - ./:/data:ro
+    profiles: ["ingest-producer"]
+    command: ["python", "-m", "streaming.ingest_producer"]
+    networks:
+      - app-network
+
+  sales-ingest-consumer:
+    build: .
+    container_name: dw_sales_ingest_consumer
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS:    ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+      KAFKA_TOPIC_SALES_INGEST:   ${KAFKA_TOPIC_SALES_INGEST:-dw.sales.ingest}
+      KAFKA_CONSUMER_GROUP:       ${KAFKA_CONSUMER_GROUP:-dw-sales-ingest-fanout}
+
+      PG_HOST:     ${PG_HOST}
+      PG_PORT:     ${PG_PORT:-5432}
+      PG_DB:       ${PG_DB:-postgres}
+      PG_USER:     ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD}
+
+      NEO4J_URI:      ${NEO4J_URI}
+      NEO4J_USER:     ${NEO4J_USER}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+
+      MONGO_URI: ${MONGO_URI}
+      MONGO_DB:  ${MONGO_DB}
+    profiles: ["ingest"]
+    command: ["python", "-m", "streaming.fanout_consumer"]
     networks:
       - app-network
 
