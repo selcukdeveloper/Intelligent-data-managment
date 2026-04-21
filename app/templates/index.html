@@ -35,4 +35,16 @@
   <p>Run the same query on all three databases and compare results.</p>
   <a href="/compare"><button>Open Comparison View</button></a>
 </div>
+
+{% if can_ingest or can_edit_queries %}
+<div class="card" style="margin-top:24px">
+  <h3 style="margin-top:0">Admin tools</h3>
+  <p>Manage the warehouse contents and the predefined query library.</p>
+  <div style="display:flex; gap:8px; flex-wrap:wrap">
+    {% if can_ingest %}<a href="/ingest"><button>Ingest CSV</button></a>{% endif %}
+    {% if can_edit_queries %}<a href="/admin/queries"><button>Manage Queries</button></a>{% endif %}
+    {% if can_ingest %}<a href="/admin/customers"><button>Manage Customers</button></a>{% endif %}
+  </div>
+</div>
+{% endif %}
 {% endblock %}
